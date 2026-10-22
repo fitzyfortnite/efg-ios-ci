@@ -1,0 +1,5 @@
+*.zip
+*.key
+EXPORT_KEY*
+*.p8
+logs/

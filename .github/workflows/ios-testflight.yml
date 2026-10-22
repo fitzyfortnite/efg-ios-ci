@@ -1,0 +1,65 @@
+name: iOS -> TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: "CFBundleVersion (empty = 100 + run number)"
+        required: false
+      runner:
+        description: "macOS runner (try another one if the job waits in the queue)"
+        type: choice
+        options: [macos-26, macos-15, macos-15-intel]
+        default: macos-26
+  push:
+    branches: [main]
+    paths: ["export/**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    runs-on: ${{ inputs.runner || 'macos-26' }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secrets
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          EXPORT_KEY: ${{ secrets.EXPORT_KEY }}
+        run: |
+          missing=0
+          for v in EXPORT_KEY ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8; do
+            if [ -z "${!v}" ]; then echo "::error::Repository secret $v is not set (Settings > Secrets and variables > Actions)"; missing=1; fi
+          done
+          exit $missing
+
+      - name: Build, sign, upload
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          EXPORT_KEY: ${{ secrets.EXPORT_KEY }}
+          BUILD_NUMBER: ${{ inputs.build_number }}
+        run: ci/build.sh
+
+      - name: Clean up decrypted files
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/efg" ~/private_keys
+
+      - name: Keep logs (failures only)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcode-logs
+          path: logs/
+          if-no-files-found: ignore
+          retention-days: 3
