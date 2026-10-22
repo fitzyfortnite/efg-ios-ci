@@ -45,6 +45,15 @@ unzip -q "$WORK/efg_ios.zip"
 find . -name "*.sh" -exec chmod +x {} +
 chmod -R +x Il2CppOutputProject/IL2CPP/build
 
+echo "== Info.plist checks"
+# the Unity export must have run its iOS post-build steps (they only exist while iOS is the active platform)
+if ! /usr/libexec/PlistBuddy -c "Print :GADApplicationIdentifier" Info.plist >/dev/null 2>&1; then
+  echo "::error::Info.plist has no GADApplicationIdentifier: the Xcode export was made before the scripts recompiled for iOS. Re-export from Unity with iOS already active."
+  exit 1
+fi
+/usr/libexec/PlistBuddy -c "Delete :ITSAppUsesNonExemptEncryption" Info.plist >/dev/null 2>&1 || true
+/usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" Info.plist
+
 echo "== build number $BUILD_NUMBER"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" Info.plist
 /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Info.plist
