@@ -63,20 +63,22 @@ KEY_PATH="$KEY_DIR/AuthKey_${ASC_KEY_ID}.p8"
 printf '%s\n' "$ASC_KEY_P8" > "$KEY_PATH"
 AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
 
-echo "== archive (ad-hoc signed; the App Store signature is applied at export by Xcode cloud signing)"
+echo "== archive (unsigned; App Store signing is applied at export by Xcode cloud signing)"
 # Automatic signing at archive time wants a *development* profile, which needs a registered device.
-# Instead: sign locally with "-" (keeps the entitlements, e.g. Game Center), then -exportArchive re-signs
-# with the cloud-managed Apple Distribution certificate and an App Store profile (no device needed).
-sed -i '' 's/"iPhone Developer"/"-"/g' Unity-iPhone.xcodeproj/project.pbxproj
+# So: archive unsigned, ad-hoc sign with the app's entitlements (Game Center), then -exportArchive
+# re-signs with the cloud-managed Apple Distribution certificate + an App Store profile (no device needed).
 ARCHIVE="$WORK/EscapeFromGranny.xcarchive"
 xcodebuild -workspace Unity-iPhone.xcworkspace -scheme Unity-iPhone -configuration Release \
   -destination 'generic/platform=iOS' -archivePath "$ARCHIVE" \
-  DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Manual AD_HOC_CODE_SIGNING_ALLOWED=YES \
-  CODE_SIGN_IDENTITY=- "CODE_SIGN_IDENTITY[sdk=iphoneos*]=-" \
-  PROVISIONING_PROFILE_SPECIFIER= PROVISIONING_PROFILE= \
-  archive > "$LOGS/archive.log" 2>&1 || { grep -E "error:|warning: .*sign|BUILD FAILED|ARCHIVE FAILED" "$LOGS/archive.log" | head -80; tail -60 "$LOGS/archive.log"; exit 1; }
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \
+  archive > "$LOGS/archive.log" 2>&1 || { grep -E "error:|BUILD FAILED|ARCHIVE FAILED" "$LOGS/archive.log" | head -80; tail -60 "$LOGS/archive.log"; exit 1; }
 tail -5 "$LOGS/archive.log"
-codesign -d --entitlements :- "$ARCHIVE/Products/Applications/"*.app 2>/dev/null | grep -A1 "<key>" || true
+
+echo "== ad-hoc sign with entitlements"
+APP=$(ls -d "$ARCHIVE/Products/Applications/"*.app)
+find "$APP/Frameworks" -maxdepth 1 \( -name "*.framework" -o -name "*.dylib" \) -print0 2>/dev/null | xargs -0 -I{} codesign -f -s - {}
+codesign -f -s - --entitlements EscapeFromGranny.entitlements "$APP"
+codesign -d --entitlements :- "$APP" 2>/dev/null | grep "<key>" || true
 
 echo "== export + upload to App Store Connect"
 xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportPath "$WORK/out" \
