@@ -77,7 +77,9 @@ tail -5 "$LOGS/archive.log"
 echo "== ad-hoc sign with entitlements"
 APP=$(ls -d "$ARCHIVE/Products/Applications/"*.app)
 find "$APP/Frameworks" -maxdepth 1 \( -name "*.framework" -o -name "*.dylib" \) -print0 2>/dev/null | xargs -0 -I{} codesign -f -s - {}
-codesign -f -s - --entitlements EscapeFromGranny.entitlements "$APP"
+# Unity writes "<true />", which the codesign entitlements parser rejects: normalise with plutil
+plutil -convert xml1 -o "$WORK/app.entitlements" EscapeFromGranny.entitlements
+codesign -f -s - --entitlements "$WORK/app.entitlements" "$APP"
 codesign -d --entitlements :- "$APP" 2>/dev/null | grep "<key>" || true
 
 echo "== export + upload to App Store Connect"
